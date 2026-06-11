@@ -12,7 +12,7 @@
 
 ## 运行
 
-直接在浏览器中打开 `fruit-slice/index.html`，或使用 GitHub Pages 在线游玩。
+直接在浏览器中打开 `index.html`，或使用 GitHub Pages 在线游玩。
 
 ## 技术
 
