@@ -38,10 +38,16 @@
   resize();
 
   // ─── Game state ───
-  const STATE = { PLAYING: 0, GAMEOVER: 1 };
-  let state = STATE.PLAYING;
+  const STATE = { MENU: 0, PLAYING: 1, GAMEOVER: 2 };
+  const MODES = [
+    { label: '30 秒极速', duration: 30, spawnScale: 0.72 },
+    { label: '60 秒经典', duration: 60, spawnScale: 1 },
+  ];
+  let state = STATE.MENU;
   let score = 0;
   let lives = 3;
+  let gameDuration = 60;
+  let spawnScale = 1;
   let timeLeft = 60;
   let lastTime = 0;
   let spawnTimer = 0;
@@ -110,7 +116,7 @@
   }
 
   function onTouchStart(e) {
-    if (state === STATE.GAMEOVER) return;
+    if (state !== STATE.PLAYING) return;
     e.preventDefault();
     const p = getPointer(e);
     lastPointer = p;
@@ -460,10 +466,14 @@
 
     // Timer
     ctx.textAlign = 'center';
-    const timerColor = timeLeft <= 10 ? '#ff3366' : '#ff00ff';
+    const warnThreshold = gameDuration <= 30 ? 5 : 10;
+    const timerColor = timeLeft <= warnThreshold ? '#ff3366' : '#ff00ff';
     ctx.shadowColor = timerColor;
     ctx.fillStyle = timerColor;
     ctx.fillText(`${Math.ceil(timeLeft)}s`, W / 2, 20);
+    ctx.font = '12px "Segoe UI", sans-serif';
+    ctx.fillStyle = 'rgba(255, 0, 255, 0.6)';
+    ctx.fillText(gameDuration === 30 ? '极速' : '经典', W / 2, 44);
 
     // Lives
     ctx.textAlign = 'right';
@@ -483,9 +493,73 @@
     ctx.restore();
   }
 
-  function drawGameOver() {
+  function getModeButtons(offsetY) {
+    const bw = Math.min(220, W * 0.42);
+    const bh = 50;
+    const gap = 14;
+    const totalH = MODES.length * bh + (MODES.length - 1) * gap;
+    const startY = offsetY - totalH / 2;
+    return MODES.map((mode, i) => ({
+      mode,
+      x: W / 2 - bw / 2,
+      y: startY + i * (bh + gap),
+      w: bw,
+      h: bh,
+    }));
+  }
+
+  function hitButton(x, y, btn) {
+    return x >= btn.x && x <= btn.x + btn.w && y >= btn.y && y <= btn.y + btn.h;
+  }
+
+  function getModeAt(x, y, offsetY) {
+    for (const btn of getModeButtons(offsetY)) {
+      if (hitButton(x, y, btn)) return btn.mode;
+    }
+    return null;
+  }
+
+  function drawModeButtons(offsetY, highlightDuration) {
+    const buttons = getModeButtons(offsetY);
     ctx.save();
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = 'bold 18px "Segoe UI", sans-serif';
+
+    for (const btn of buttons) {
+      const active = highlightDuration === btn.mode.duration;
+      const pulse = 0.85 + Math.sin(Date.now() / 400) * 0.15;
+
+      ctx.shadowColor = active ? '#00ffff' : '#ff00ff';
+      ctx.shadowBlur = active ? 22 : 12;
+      ctx.strokeStyle = active ? '#00ffff' : `rgba(255, 0, 255, ${pulse})`;
+      ctx.lineWidth = active ? 3 : 2;
+      ctx.fillStyle = active ? 'rgba(0, 255, 255, 0.15)' : 'rgba(255, 0, 255, 0.08)';
+      const r = 10;
+      ctx.beginPath();
+      ctx.moveTo(btn.x + r, btn.y);
+      ctx.lineTo(btn.x + btn.w - r, btn.y);
+      ctx.quadraticCurveTo(btn.x + btn.w, btn.y, btn.x + btn.w, btn.y + r);
+      ctx.lineTo(btn.x + btn.w, btn.y + btn.h - r);
+      ctx.quadraticCurveTo(btn.x + btn.w, btn.y + btn.h, btn.x + btn.w - r, btn.y + btn.h);
+      ctx.lineTo(btn.x + r, btn.y + btn.h);
+      ctx.quadraticCurveTo(btn.x, btn.y + btn.h, btn.x, btn.y + btn.h - r);
+      ctx.lineTo(btn.x, btn.y + r);
+      ctx.quadraticCurveTo(btn.x, btn.y, btn.x + r, btn.y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.shadowBlur = 8;
+      ctx.fillStyle = active ? '#00ffff' : '#ff66ff';
+      ctx.fillText(btn.mode.label, btn.x + btn.w / 2, btn.y + btn.h / 2);
+    }
+    ctx.restore();
+  }
+
+  function drawOverlayScreen(title, subtitle, buttonOffsetY, highlightDuration) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
     ctx.fillRect(0, 0, W, H);
 
     ctx.textAlign = 'center';
@@ -494,35 +568,48 @@
     ctx.shadowColor = '#ff00ff';
     ctx.shadowBlur = 30;
     ctx.fillStyle = '#ff00ff';
-    ctx.font = 'bold 48px "Segoe UI", sans-serif';
-    ctx.fillText('GAME OVER', W / 2, H / 2 - 60);
+    ctx.font = 'bold 44px "Segoe UI", sans-serif';
+    ctx.fillText(title, W / 2, H / 2 - 100);
 
-    ctx.shadowColor = '#00ffff';
-    ctx.shadowBlur = 15;
-    ctx.fillStyle = '#00ffff';
-    ctx.font = '24px "Segoe UI", sans-serif';
-    ctx.fillText(`最终得分: ${score}`, W / 2, H / 2);
+    if (subtitle) {
+      ctx.shadowColor = '#00ffff';
+      ctx.shadowBlur = 15;
+      ctx.fillStyle = '#00ffff';
+      ctx.font = '22px "Segoe UI", sans-serif';
+      ctx.fillText(subtitle, W / 2, H / 2 - 50);
+    }
 
-    ctx.shadowBlur = 20;
-    ctx.fillStyle = '#ffffff';
-    ctx.font = '20px "Segoe UI", sans-serif';
-    const pulse = 0.7 + Math.sin(Date.now() / 300) * 0.3;
-    ctx.globalAlpha = pulse;
-    ctx.fillText('点击或触摸屏幕再玩一次', W / 2, H / 2 + 60);
-    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.font = '15px "Segoe UI", sans-serif';
+    ctx.fillText('选择模式开始', W / 2, buttonOffsetY - 50);
+
+    drawModeButtons(buttonOffsetY, highlightDuration);
     ctx.restore();
+  }
+
+  function drawMenu() {
+    drawBackground();
+    drawOverlayScreen('霓虹切水果', null, H / 2 + 30, null);
+  }
+
+  function drawGameOver() {
+    drawOverlayScreen('GAME OVER', `最终得分: ${score}`, H / 2 + 40, gameDuration);
   }
 
   function gameOver() {
     state = STATE.GAMEOVER;
   }
 
-  function resetGame() {
+  function startGame(mode) {
+    gameDuration = mode.duration;
+    spawnScale = mode.spawnScale;
     state = STATE.PLAYING;
     score = 0;
     lives = 3;
-    timeLeft = 60;
+    timeLeft = gameDuration;
     spawnTimer = 0;
+    spawnInterval = 0.9 * spawnScale;
     fruits.length = 0;
     particles.length = 0;
     bladeTrail.length = 0;
@@ -530,14 +617,17 @@
     lastTime = performance.now();
   }
 
-  function onRestart(e) {
-    if (state !== STATE.GAMEOVER) return;
+  function onModeSelect(e) {
+    if (state !== STATE.MENU && state !== STATE.GAMEOVER) return;
     e.preventDefault();
-    resetGame();
+    const p = getPointer(e);
+    const offsetY = state === STATE.MENU ? H / 2 + 30 : H / 2 + 40;
+    const mode = getModeAt(p.x, p.y, offsetY);
+    if (mode) startGame(mode);
   }
 
-  canvas.addEventListener('mousedown', onRestart);
-  canvas.addEventListener('touchstart', onRestart, { passive: false });
+  canvas.addEventListener('mousedown', onModeSelect);
+  canvas.addEventListener('touchstart', onModeSelect, { passive: false });
 
   // ─── Main loop ───
   function update(dt) {
@@ -554,7 +644,7 @@
     if (spawnTimer >= spawnInterval) {
       spawnTimer = 0;
       spawnFruit();
-      spawnInterval = 0.6 + Math.random() * 0.6;
+      spawnInterval = (0.6 + Math.random() * 0.6) * spawnScale;
     }
 
     for (let i = fruits.length - 1; i >= 0; i--) {
@@ -598,6 +688,7 @@
     drawBlade();
     drawHUD();
 
+    if (state === STATE.MENU) drawMenu();
     if (state === STATE.GAMEOVER) drawGameOver();
   }
 
@@ -609,7 +700,7 @@
     requestAnimationFrame(loop);
   }
 
-  resetGame();
+  lastTime = performance.now();
   requestAnimationFrame(loop);
 })();
   </script>
