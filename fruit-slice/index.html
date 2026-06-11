@@ -40,12 +40,15 @@
   // ─── Game state ───
   const STATE = { MENU: 0, PLAYING: 1, GAMEOVER: 2 };
   const MODES = [
-    { label: '30 秒极速', duration: 30, spawnScale: 0.72 },
-    { label: '60 秒经典', duration: 60, spawnScale: 1 },
+    { id: 'speed30', label: '30 秒极速', duration: 30, spawnScale: 0.72, missPenalty: false },
+    { id: 'classic60', label: '60 秒经典', duration: 60, spawnScale: 1, missPenalty: false },
+    { id: 'penalty60', label: '60 秒掉果扣分', duration: 60, spawnScale: 1, missPenalty: true, missDeduct: 5 },
   ];
   let state = STATE.MENU;
+  let currentMode = null;
   let score = 0;
   let lives = 3;
+  let scoreFlash = 0;
   let gameDuration = 60;
   let spawnScale = 1;
   let timeLeft = 60;
@@ -171,6 +174,15 @@
     f.rotation += f.rotSpeed;
     if (f.isBomb) f.pulsePhase += 0.12;
     return f.y < H + f.r * 2;
+  }
+
+  function onFruitMissed(f) {
+    if (!currentMode || !currentMode.missPenalty) return;
+    if (f.isHalf || f.isBomb || f.sliced) return;
+    const deduct = currentMode.missDeduct || 5;
+    score = Math.max(0, score - deduct);
+    scoreFlash = 0.6;
+    spawnExplosion(Math.min(Math.max(f.x, 40), W - 40), H - 30, '#ff3366', 12);
   }
 
   function drawBomb(f) {
@@ -458,9 +470,10 @@
     ctx.textBaseline = 'top';
 
     // Score
-    ctx.shadowColor = '#00ffff';
-    ctx.shadowBlur = 10;
-    ctx.fillStyle = '#00ffff';
+    const scoreColor = scoreFlash > 0 ? '#ff3366' : '#00ffff';
+    ctx.shadowColor = scoreColor;
+    ctx.shadowBlur = scoreFlash > 0 ? 18 : 10;
+    ctx.fillStyle = scoreColor;
     ctx.textAlign = 'left';
     ctx.fillText(`得分 ${score}`, 20, 20);
 
@@ -473,7 +486,9 @@
     ctx.fillText(`${Math.ceil(timeLeft)}s`, W / 2, 20);
     ctx.font = '12px "Segoe UI", sans-serif';
     ctx.fillStyle = 'rgba(255, 0, 255, 0.6)';
-    ctx.fillText(gameDuration === 30 ? '极速' : '经典', W / 2, 44);
+    const modeTag = currentMode?.id === 'speed30' ? '极速'
+      : currentMode?.missPenalty ? '掉果扣分' : '经典';
+    ctx.fillText(modeTag, W / 2, 44);
 
     // Lives
     ctx.textAlign = 'right';
@@ -488,15 +503,18 @@
     ctx.font = '13px "Segoe UI", sans-serif';
     ctx.fillStyle = 'rgba(0, 255, 255, 0.45)';
     ctx.textAlign = 'center';
-    ctx.fillText('触控板轻滑即可切水果 · 避开黄黑条纹炸弹', W / 2, H - 24);
+    const hint = currentMode?.missPenalty
+      ? '漏切水果扣 5 分(最低 0) · 避开炸弹'
+      : '触控板轻滑即可切水果 · 避开黄黑条纹炸弹';
+    ctx.fillText(hint, W / 2, H - 24);
 
     ctx.restore();
   }
 
   function getModeButtons(offsetY) {
-    const bw = Math.min(220, W * 0.42);
-    const bh = 50;
-    const gap = 14;
+    const bw = Math.min(240, W * 0.44);
+    const bh = 44;
+    const gap = 10;
     const totalH = MODES.length * bh + (MODES.length - 1) * gap;
     const startY = offsetY - totalH / 2;
     return MODES.map((mode, i) => ({
@@ -519,15 +537,15 @@
     return null;
   }
 
-  function drawModeButtons(offsetY, highlightDuration) {
+  function drawModeButtons(offsetY, highlightModeId) {
     const buttons = getModeButtons(offsetY);
     ctx.save();
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.font = 'bold 18px "Segoe UI", sans-serif';
+    ctx.font = 'bold 17px "Segoe UI", sans-serif';
 
     for (const btn of buttons) {
-      const active = highlightDuration === btn.mode.duration;
+      const active = highlightModeId && highlightModeId === btn.mode.id;
       const pulse = 0.85 + Math.sin(Date.now() / 400) * 0.15;
 
       ctx.shadowColor = active ? '#00ffff' : '#ff00ff';
@@ -557,7 +575,7 @@
     ctx.restore();
   }
 
-  function drawOverlayScreen(title, subtitle, buttonOffsetY, highlightDuration) {
+  function drawOverlayScreen(title, subtitle, buttonOffsetY, highlightModeId) {
     ctx.save();
     ctx.fillStyle = 'rgba(0, 0, 0, 0.75)';
     ctx.fillRect(0, 0, W, H);
@@ -584,17 +602,17 @@
     ctx.font = '15px "Segoe UI", sans-serif';
     ctx.fillText('选择模式开始', W / 2, buttonOffsetY - 50);
 
-    drawModeButtons(buttonOffsetY, highlightDuration);
+    drawModeButtons(buttonOffsetY, highlightModeId);
     ctx.restore();
   }
 
   function drawMenu() {
     drawBackground();
-    drawOverlayScreen('霓虹切水果', null, H / 2 + 30, null);
+    drawOverlayScreen('霓虹切水果', null, H / 2 + 50, null);
   }
 
   function drawGameOver() {
-    drawOverlayScreen('GAME OVER', `最终得分: ${score}`, H / 2 + 40, gameDuration);
+    drawOverlayScreen('GAME OVER', `最终得分: ${score}`, H / 2 + 55, currentMode?.id);
   }
 
   function gameOver() {
@@ -602,11 +620,13 @@
   }
 
   function startGame(mode) {
+    currentMode = mode;
     gameDuration = mode.duration;
     spawnScale = mode.spawnScale;
     state = STATE.PLAYING;
     score = 0;
     lives = 3;
+    scoreFlash = 0;
     timeLeft = gameDuration;
     spawnTimer = 0;
     spawnInterval = 0.9 * spawnScale;
@@ -621,7 +641,7 @@
     if (state !== STATE.MENU && state !== STATE.GAMEOVER) return;
     e.preventDefault();
     const p = getPointer(e);
-    const offsetY = state === STATE.MENU ? H / 2 + 30 : H / 2 + 40;
+    const offsetY = state === STATE.MENU ? H / 2 + 50 : H / 2 + 55;
     const mode = getModeAt(p.x, p.y, offsetY);
     if (mode) startGame(mode);
   }
@@ -648,8 +668,13 @@
     }
 
     for (let i = fruits.length - 1; i >= 0; i--) {
-      if (!updateFruit(fruits[i])) fruits.splice(i, 1);
+      if (!updateFruit(fruits[i])) {
+        onFruitMissed(fruits[i]);
+        fruits.splice(i, 1);
+      }
     }
+
+    if (scoreFlash > 0) scoreFlash -= dt;
 
     for (let i = particles.length - 1; i >= 0; i--) {
       if (!updateParticle(particles[i])) particles.splice(i, 1);
